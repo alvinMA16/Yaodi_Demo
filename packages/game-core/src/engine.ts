@@ -3,15 +3,91 @@ import type {
   ApplyActionResult,
   BalanceConfig,
   CardDefinition,
+  CardRarity,
   CardEffect,
   DailyRecord,
   EndingResult,
   Faction,
   GameAction,
   GameState,
+  InquiryPhase,
+  InquiryTargetContext,
   RunSummary,
   StartRunParams
 } from "./types.js";
+
+const factionOrder: Faction[] = ["gov", "corp", "anti"];
+const defaultRarityWeights: Record<CardRarity, number> = { W: 0, G: 0, B: 0, R: 0, O: 0 };
+
+const govPersonas = ["发言人", "技术主管", "部长", "副总统"] as const;
+const corpPersonas = ["发言人", "法务", "高管", "CEO"] as const;
+const antiPersonas = ["游行者", "领队", "策划", "领袖"] as const;
+
+const phaseRarityTables: Record<
+  InquiryPhase,
+  Record<Faction, Array<Record<CardRarity, number>>>
+> = {
+  day1to3: {
+    gov: [
+      { W: 92, G: 7, B: 1, R: 0, O: 0 },
+      { W: 88, G: 10, B: 2, R: 0, O: 0 },
+      { W: 85, G: 12, B: 3, R: 0, O: 0 },
+      { W: 82, G: 12, B: 6, R: 0, O: 0 }
+    ],
+    corp: [
+      { W: 90, G: 8, B: 2, R: 0, O: 0 },
+      { W: 84, G: 10, B: 6, R: 0, O: 0 },
+      { W: 80, G: 10, B: 10, R: 0, O: 0 },
+      { W: 78, G: 10, B: 12, R: 0, O: 0 }
+    ],
+    anti: [
+      { W: 88, G: 10, B: 2, R: 0, O: 0 },
+      { W: 82, G: 13, B: 5, R: 0, O: 0 },
+      { W: 78, G: 12, B: 10, R: 0, O: 0 },
+      { W: 76, G: 10, B: 14, R: 0, O: 0 }
+    ]
+  },
+  day4to6: {
+    gov: [
+      { W: 86, G: 10, B: 4, R: 0, O: 0 },
+      { W: 82, G: 10, B: 6, R: 2, O: 0 },
+      { W: 78, G: 12, B: 7, R: 3, O: 0 },
+      { W: 76, G: 12, B: 8, R: 4, O: 0 }
+    ],
+    corp: [
+      { W: 82, G: 10, B: 6, R: 2, O: 0 },
+      { W: 78, G: 10, B: 7, R: 4, O: 1 },
+      { W: 72, G: 10, B: 10, R: 7, O: 1 },
+      { W: 68, G: 10, B: 12, R: 8, O: 2 }
+    ],
+    anti: [
+      { W: 80, G: 12, B: 5, R: 3, O: 0 },
+      { W: 74, G: 13, B: 6, R: 6, O: 1 },
+      { W: 66, G: 12, B: 7, R: 12, O: 3 },
+      { W: 62, G: 10, B: 6, R: 19, O: 3 }
+    ]
+  },
+  day7: {
+    gov: [
+      { W: 84, G: 10, B: 4, R: 2, O: 0 },
+      { W: 82, G: 10, B: 5, R: 2, O: 1 },
+      { W: 74, G: 12, B: 7, R: 5, O: 2 },
+      { W: 70, G: 12, B: 8, R: 6, O: 4 }
+    ],
+    corp: [
+      { W: 78, G: 10, B: 7, R: 4, O: 1 },
+      { W: 72, G: 10, B: 8, R: 7, O: 3 },
+      { W: 68, G: 10, B: 10, R: 8, O: 4 },
+      { W: 60, G: 10, B: 12, R: 10, O: 8 }
+    ],
+    anti: [
+      { W: 74, G: 12, B: 6, R: 8, O: 0 },
+      { W: 70, G: 13, B: 6, R: 9, O: 2 },
+      { W: 66, G: 12, B: 6, R: 12, O: 4 },
+      { W: 60, G: 10, B: 5, R: 15, O: 10 }
+    ]
+  }
+};
 
 function cloneEffect(effect?: CardEffect): CardEffect {
   return {
@@ -27,6 +103,22 @@ function addEffect(base: CardEffect, delta: CardEffect): CardEffect {
     corp: base.corp + delta.corp,
     anti: base.anti + delta.anti
   };
+}
+
+function compareFactions(a: string, b: string) {
+  return factionOrder.indexOf(a as Faction) - factionOrder.indexOf(b as Faction);
+}
+
+function phaseFromDay(day: number): InquiryPhase {
+  if (day <= 3) {
+    return "day1to3";
+  }
+
+  if (day <= 6) {
+    return "day4to6";
+  }
+
+  return "day7";
 }
 
 function instantiateCard(card: CardDefinition, instanceId: string): CardDefinition {
@@ -46,26 +138,135 @@ function findCard(cards: CardDefinition[], id: string) {
   return card;
 }
 
-function weightedCardPick(cards: CardDefinition[], seed: number, day: number, inquiryIndex: number, target: Faction) {
-  const pool = cards.filter((card) => card.sourceFaction === target && !card.starter);
+function currentDayDelta(state: GameState) {
+  let record: DailyRecord | undefined;
 
-  if (pool.length === 0) {
-    throw new Error(`No cards configured for target ${target}`);
-  }
-
-  const rng = createRng(seed + day * 100 + inquiryIndex * 17 + target.charCodeAt(0));
-  const totalWeight = pool.reduce((sum, card) => sum + card.weight, 0);
-  const roll = rng() * totalWeight;
-  let cursor = 0;
-
-  for (const card of pool) {
-    cursor += card.weight;
-    if (roll <= cursor) {
-      return card;
+  for (let index = state.history.length - 1; index >= 0; index -= 1) {
+    const candidate = state.history[index];
+    if (candidate?.day === state.day) {
+      record = candidate;
+      break;
     }
   }
 
-  return pool[pool.length - 1]!;
+  return (record?.playedCards ?? []).reduce<CardEffect>(
+    (effect, card) => addEffect(effect, card.effect),
+    cloneEffect()
+  );
+}
+
+function govLevel(state: GameState) {
+  const absoluteGov = Math.abs(state.world.gov);
+  const dailyGovDelta = Math.abs(currentDayDelta(state).gov);
+  let level: 1 | 2 | 3 | 4 = 1;
+
+  if (absoluteGov >= 70) {
+    level = 4;
+  } else if (absoluteGov >= 40) {
+    level = 3;
+  } else if (absoluteGov >= 20) {
+    level = 2;
+  }
+
+  if (dailyGovDelta >= 90) {
+    return 4;
+  }
+
+  if (dailyGovDelta >= 60) {
+    return Math.max(level, 3) as 3 | 4;
+  }
+
+  if (dailyGovDelta >= 30) {
+    return Math.max(level, 2) as 2 | 3 | 4;
+  }
+
+  return level;
+}
+
+function corpLevel(state: GameState) {
+  const dailyCorpDelta = Math.abs(currentDayDelta(state).corp);
+
+  if (dailyCorpDelta >= 35) {
+    return 4;
+  }
+
+  if (dailyCorpDelta >= 20) {
+    return 3;
+  }
+
+  if (dailyCorpDelta >= 10) {
+    return 2;
+  }
+
+  return 1;
+}
+
+function antiLevel(state: GameState) {
+  const dailyCorpDelta = Math.abs(currentDayDelta(state).corp);
+  const absoluteGov = Math.abs(state.world.gov);
+  const stormIndex = dailyCorpDelta * 2 + absoluteGov * 0.7;
+
+  if (stormIndex >= 50) {
+    return 4;
+  }
+
+  if (stormIndex >= 35) {
+    return 3;
+  }
+
+  if (stormIndex >= 20) {
+    return 2;
+  }
+
+  return 1;
+}
+
+export function describeInquiryTarget(state: GameState, target: Faction): InquiryTargetContext {
+  const phase = phaseFromDay(state.day);
+  const level = target === "gov" ? govLevel(state) : target === "corp" ? corpLevel(state) : antiLevel(state);
+  const personaByTarget = {
+    gov: govPersonas,
+    corp: corpPersonas,
+    anti: antiPersonas
+  } as const;
+  const persona = personaByTarget[target][level - 1]!;
+
+  return {
+    target,
+    day: state.day,
+    phase,
+    level,
+    persona,
+    rarityWeights: phaseRarityTables[phase][target][level - 1] ?? defaultRarityWeights
+  };
+}
+
+function weightedCardPick(cards: CardDefinition[], seed: number, day: number, inquiryIndex: number, targetContext: InquiryTargetContext) {
+  const pool = cards
+    .filter((card) => card.sourceFaction === targetContext.target && !card.starter)
+    .map((card) => ({
+      card,
+      effectiveWeight: card.weight * (targetContext.rarityWeights[card.rarity] ?? 0)
+    }))
+    .filter((entry) => entry.effectiveWeight > 0);
+
+  if (pool.length === 0) {
+    throw new Error(`No cards configured for target ${targetContext.target} in phase ${targetContext.phase}`);
+  }
+
+  const rng = createRng(seed + day * 100 + inquiryIndex * 17 + targetContext.target.charCodeAt(0) + targetContext.level * 13);
+  const totalWeight = pool.reduce((sum, entry) => sum + entry.effectiveWeight, 0);
+  const roll = rng() * totalWeight;
+  let cursor = 0;
+
+  for (const entry of pool) {
+    cursor += entry.effectiveWeight;
+    if (roll <= cursor) {
+      return entry.card;
+    }
+  }
+
+  return pool[pool.length - 1]!.card;
 }
 
 function currentDayRecord(state: GameState): DailyRecord {
@@ -116,16 +317,35 @@ export function computePressure(config: BalanceConfig, currentPressure: number, 
   };
 }
 
-function rankingFromEffect(effect: CardEffect) {
-  return Object.entries(effect)
+function rankingGroupsFromEffect(effect: CardEffect) {
+  const sorted = Object.entries(effect)
     .sort((a, b) => {
       if (b[1] === a[1]) {
-        return a[0].localeCompare(b[0]);
+        return compareFactions(a[0], b[0]);
       }
 
       return b[1] - a[1];
-    })
-    .map(([faction]) => faction);
+    });
+  const groups: string[][] = [];
+
+  for (const [faction, value] of sorted) {
+    const lastGroup = groups[groups.length - 1];
+    const lastFaction = lastGroup?.[0];
+    const lastValue = lastFaction ? effect[lastFaction as Faction] : undefined;
+
+    if (lastGroup && lastValue === value) {
+      lastGroup.push(faction);
+      continue;
+    }
+
+    groups.push([faction]);
+  }
+
+  return groups;
+}
+
+function rankingFromEffect(effect: CardEffect) {
+  return rankingGroupsFromEffect(effect).flat();
 }
 
 function topTendency(effect: CardEffect) {
@@ -134,13 +354,96 @@ function topTendency(effect: CardEffect) {
   return Object.entries(effect)
     .filter(([, value]) => value === maxValue)
     .map(([faction]) => faction)
-    .sort();
+    .sort(compareFactions);
+}
+
+function formatFactionGroups(groups: string[][]) {
+  return groups.map((group) => group.join(" = ")).join(" > ");
+}
+
+function worldEndingFromRankingLabel(rankingLabel: string) {
+  switch (rankingLabel) {
+    case "gov > corp > anti":
+      return {
+        title: "合法合规",
+        summary: "AI 受损上线，政府指导公司并保有监督管理权，反对组织失败。"
+      };
+    case "gov > anti > corp":
+      return {
+        title: "国有资产",
+        summary: "AI 受损上线，政府采纳了反对组织意见，并对 AI 推进实施了国有化。"
+      };
+    case "gov = anti > corp":
+      return {
+        title: "隐私保护",
+        summary: "AI 暂停上线，政府全面审查隐私问题，反对组织全程监督，公司失败。"
+      };
+    case "gov = corp > anti":
+      return {
+        title: "民生第一",
+        summary: "AI 受损上线，政府有限支持公司，同时附加税收与就业约束，反对组织失败。"
+      };
+    case "gov > anti = corp":
+      return {
+        title: "明天再说",
+        summary: "AI 延缓上线，公司与反对组织各执一词，政府选择继续观望。"
+      };
+    case "anti > gov > corp":
+      return {
+        title: "拦腰斩断",
+        summary: "AI 未能上线，政府听取了反对组织与舆论意见，直接立法禁止部署。"
+      };
+    case "anti > corp > gov":
+      return {
+        title: "黑客帝国",
+        summary: "AI 叛乱上线，反对组织渗透公司上传恶意代码，公司为保市值没有立刻下线。"
+      };
+    case "anti > gov = corp":
+      return {
+        title: "人民万岁",
+        summary: "AI 受损上线，却遭到人民抵制，政府和公司彼此制衡。"
+      };
+    case "corp > anti > gov":
+      return {
+        title: "无伤大雅",
+        summary: "AI 受损上线，公司成功打压反对组织，多数用户仍被留在系统里。"
+      };
+    case "corp > gov > anti":
+      return {
+        title: "公司至上",
+        summary: "AI 完整上线，政府完全支持公司，反对组织失败。"
+      };
+    case "corp = anti > gov":
+      return {
+        title: "握手言和",
+        summary: "公司与反对组织达成和解，AI 受限上线，政府基本缺席。"
+      };
+    case "corp > gov = anti":
+      return {
+        title: "坐收渔利",
+        summary: "AI 完整上线，政府和反对组织来回拉扯，公司趁机推进成功。"
+      };
+    case "gov = corp = anti":
+      return {
+        title: "三权分立",
+        summary: "三方陷入胶着，现实没有发生决定性变化。"
+      };
+    default:
+      return {
+        title: "未知结局",
+        summary: "世界走向未能匹配到已定义的结局模板。"
+      };
+  }
 }
 
 export function determineEnding(state: GameState): EndingResult {
-  const ranking = rankingFromEffect(state.world);
+  const rankingGroups = rankingGroupsFromEffect(state.world);
+  const ranking = rankingGroups.flat();
+  const rankingLabel = formatFactionGroups(rankingGroups);
   const playerTendency = topTendency(state.playerInfluence);
+  const playerTendencyLabel = playerTendency.join(" = ");
   const reportDays = state.history.filter((day) => day.reportSubmitted).length;
+  const worldEnding = worldEndingFromRankingLabel(rankingLabel);
 
   if (state.runStatus === "dead") {
     return {
@@ -148,7 +451,11 @@ export function determineEnding(state: GameState): EndingResult {
       title: "死亡",
       summary: "压力突破阈值，调查在崩溃前终止。",
       ranking,
-      playerTendency
+      rankingLabel,
+      playerTendency,
+      playerTendencyLabel,
+      worldEndingTitle: worldEnding.title,
+      worldEndingSummary: worldEnding.summary
     };
   }
 
@@ -158,7 +465,11 @@ export function determineEnding(state: GameState): EndingResult {
       title: "全空白",
       summary: "七天没有提交任何报告，案件被彻底放空。",
       ranking,
-      playerTendency
+      rankingLabel,
+      playerTendency,
+      playerTendencyLabel,
+      worldEndingTitle: worldEnding.title,
+      worldEndingSummary: worldEnding.summary
     };
   }
 
@@ -168,15 +479,15 @@ export function determineEnding(state: GameState): EndingResult {
       title: "调查失败",
       summary: "你活了下来，但调查并未持续推进到最后。",
       ranking,
-      playerTendency
+      rankingLabel,
+      playerTendency,
+      playerTendencyLabel,
+      worldEndingTitle: worldEnding.title,
+      worldEndingSummary: worldEnding.summary
     };
   }
 
-  const winnerScore = Math.max(state.world.gov, state.world.corp, state.world.anti);
-  const leaders = Object.entries(state.world)
-    .filter(([, value]) => value === winnerScore)
-    .map(([faction]) => faction)
-    .sort();
+  const leaders = rankingGroups[0] ?? [];
   const isPerfect = playerTendency.some((faction) => leaders.includes(faction));
 
   return isPerfect
@@ -185,14 +496,22 @@ export function determineEnding(state: GameState): EndingResult {
         title: "强胜利",
         summary: "你的行动倾向与最终主导阵营保持一致，报告完整且方向正确。",
         ranking,
-        playerTendency
+        rankingLabel,
+        playerTendency,
+        playerTendencyLabel,
+        worldEndingTitle: worldEnding.title,
+        worldEndingSummary: worldEnding.summary
       }
     : {
         code: "win",
         title: "胜利",
         summary: "你完成了全部调查，但推进方向与最终世界走向并不一致。",
         ranking,
-        playerTendency
+        rankingLabel,
+        playerTendency,
+        playerTendencyLabel,
+        worldEndingTitle: worldEnding.title,
+        worldEndingSummary: worldEnding.summary
       };
 }
 
@@ -237,8 +556,9 @@ export function resolveInquiry(config: BalanceConfig, state: GameState, target: 
   }
 
   const inquiryIndex = 3 - state.inquiryRemaining;
+  const targetContext = describeInquiryTarget(state, target);
   const card = instantiateCard(
-    weightedCardPick(config.cards, seed, state.day, inquiryIndex, target),
+    weightedCardPick(config.cards, seed, state.day, inquiryIndex, targetContext),
     `day-${state.day}-inq-${inquiryIndex + 1}-${target}`
   );
   const record = currentDayRecord(state);
@@ -322,6 +642,12 @@ export function applyAction(config: BalanceConfig, seed: number, state: GameStat
     .map((cardId) => removeCard(state.infoCards, cardId))
     .filter((card): card is CardDefinition => Boolean(card));
   const retained = [...state.infoCards];
+  const playedCardsCount = record.playedCards.length;
+
+  if (action.submitReport && playedCardsCount === 0) {
+    throw new Error("Cannot submit a report without playing at least one card");
+  }
+
   const rareCardsPlayed = record.playedCards
     .map((entry) => findCard(config.cards, entry.cardId))
     .filter((card) => card.rarity === "B" || card.rarity === "R");
@@ -329,7 +655,7 @@ export function applyAction(config: BalanceConfig, seed: number, state: GameStat
 
   record.discardedCardIds = discarded.map((card) => card.id);
   record.retainedCardIds = retained.map((card) => card.id);
-  record.reportSubmitted = action.submitReport;
+  record.reportSubmitted = action.submitReport && playedCardsCount > 0;
   record.pressureAfter = pressure.nextPressure;
   state.pressure = pressure.nextPressure;
 
@@ -358,6 +684,6 @@ export function applyAction(config: BalanceConfig, seed: number, state: GameStat
 
   return {
     state,
-    actionSummary: `Ended day ${record.day}`
+    actionSummary: record.reportSubmitted ? `Submitted a report and ended day ${record.day}` : `Ended day ${record.day} with an empty report`
   };
 }

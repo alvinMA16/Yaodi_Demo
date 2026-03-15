@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import type { CardDefinition, Faction, GameState } from "@alibi/game-core";
+import { describeInquiryTarget } from "@alibi/game-core";
+import type { CardDefinition, Faction, GameState, InquiryTargetContext } from "@alibi/game-core";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3001";
 
@@ -149,6 +150,16 @@ export default function App() {
     return <main className="shell">加载中...</main>;
   }
 
+  const currentDayRecord =
+    run && run.state.history[run.state.history.length - 1]?.day === run.state.day
+      ? run.state.history[run.state.history.length - 1]
+      : null;
+  const currentDayPlayedCount = currentDayRecord?.playedCards.length ?? 0;
+  const canSubmitReport = currentDayPlayedCount > 0;
+  const inquiryContexts: InquiryTargetContext[] = run
+    ? (["gov", "corp", "anti"] as Faction[]).map((target) => describeInquiryTarget(run.state, target))
+    : [];
+
   return (
     <main className="shell">
       <section className="hero">
@@ -197,15 +208,34 @@ export default function App() {
           <section className="grid two-columns">
             <section className="panel">
               <h2>质询</h2>
-              <p>剩余 {run.state.inquiryRemaining} 次。每次质询会按阵营权重抽一张信息卡。</p>
+              <p>剩余 {run.state.inquiryRemaining} 次。每次质询会按当前人物等级和天数阶段刷新信息卡。</p>
+              <div className="history">
+                {inquiryContexts.map((context) => (
+                  <article key={context.target} className="history-day">
+                    <header>
+                      <strong>{context.target}</strong>
+                      <span>
+                        Lv{context.level} {context.persona}
+                      </span>
+                    </header>
+                    <p>
+                      阶段：
+                      {context.phase === "day1to3" ? "Day 1-3" : context.phase === "day4to6" ? "Day 4-6" : "Day 7"}
+                    </p>
+                    <p>
+                      刷率：W {context.rarityWeights.W} / G {context.rarityWeights.G} / B {context.rarityWeights.B} / R {context.rarityWeights.R} / O {context.rarityWeights.O}
+                    </p>
+                  </article>
+                ))}
+              </div>
               <div className="actions">
-                {(["gov", "corp", "anti"] as Faction[]).map((target) => (
+                {inquiryContexts.map((context) => (
                   <button
-                    key={target}
+                    key={context.target}
                     disabled={pending || run.state.inquiryRemaining === 0 || run.state.runStatus !== "active"}
-                    onClick={() => void submitAction({ type: "inquire", target })}
+                    onClick={() => void submitAction({ type: "inquire", target: context.target })}
                   >
-                    质询 {target}
+                    质询 {context.target} · {context.persona}
                   </button>
                 ))}
               </div>
@@ -244,11 +274,11 @@ export default function App() {
           <section className="grid two-columns">
             <section className="panel">
               <h2>日终处理</h2>
-              <p>未打出的信息卡可以留到下一天，也可以在这里销毁。蓝卡和红卡会增加额外压力。</p>
+              <p>未打出的信息卡可以留到下一天，也可以在这里销毁。蓝卡和红卡会增加额外压力。想提交报告，今天至少要先打出 1 张卡。</p>
               <div className="actions">
                 <button
                   className="primary"
-                  disabled={pending || run.state.runStatus !== "active"}
+                  disabled={pending || run.state.runStatus !== "active" || !canSubmitReport}
                   onClick={() =>
                     void submitAction({
                       type: "endDay",
@@ -297,10 +327,12 @@ export default function App() {
 
           {run.state.ending ? (
             <section className="panel ending">
-              <h2>{run.state.ending.title}</h2>
+              <h2>《{run.state.ending.worldEndingTitle}》</h2>
+              <p>{run.state.ending.worldEndingSummary}</p>
+              <p>调查结果：{run.state.ending.title}</p>
               <p>{run.state.ending.summary}</p>
-              <p>阵营排序：{run.state.ending.ranking.join(" > ")}</p>
-              <p>玩家倾向：{run.state.ending.playerTendency.join(" = ")}</p>
+              <p>阵营排序：{run.state.ending.rankingLabel}</p>
+              <p>玩家倾向：{run.state.ending.playerTendencyLabel}</p>
             </section>
           ) : null}
         </>

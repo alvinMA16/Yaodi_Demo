@@ -2,6 +2,7 @@ export type Faction = "gov" | "corp" | "anti";
 export type CardRarity = "W" | "G" | "B" | "R" | "O";
 export type RunStatus = "active" | "completed" | "dead";
 export type EndingCode = "perfect" | "win" | "failure" | "blank" | "death";
+export type InquiryPhase = "day1to3" | "day4to6" | "day7";
 
 export interface CardEffect {
   gov: number;
@@ -74,7 +75,20 @@ export interface EndingResult {
   title: string;
   summary: string;
   ranking: string[];
+  rankingLabel: string;
   playerTendency: string[];
+  playerTendencyLabel: string;
+  worldEndingTitle: string;
+  worldEndingSummary: string;
+}
+
+export interface InquiryTargetContext {
+  target: Faction;
+  day: number;
+  phase: InquiryPhase;
+  level: 1 | 2 | 3 | 4;
+  persona: string;
+  rarityWeights: Record<CardRarity, number>;
 }
 
 export interface GameState {
