@@ -1,0 +1,173 @@
+:root {
+  color: #f7f3ea;
+  background:
+    radial-gradient(circle at top, rgba(206, 138, 67, 0.26), transparent 28%),
+    linear-gradient(180deg, #1d232d 0%, #11151b 100%);
+  font-family: "IBM Plex Sans", "Helvetica Neue", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button {
+  border: 0;
+  border-radius: 999px;
+  padding: 0.7rem 1rem;
+  background: #334155;
+  color: #f8fafc;
+  cursor: pointer;
+}
+
+button.primary {
+  background: #d97706;
+  color: #1c1917;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.shell {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.hero,
+.panel,
+.stat {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(18, 24, 33, 0.82);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.28);
+}
+
+.hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: end;
+  padding: 1.5rem;
+  border-radius: 28px;
+}
+
+.eyebrow {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: #f59e0b;
+}
+
+.grid {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.summary-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.two-columns {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.panel {
+  border-radius: 24px;
+  padding: 1.25rem;
+}
+
+.stat {
+  padding: 1rem 1.2rem;
+  border-radius: 20px;
+}
+
+.stat span {
+  display: block;
+  font-size: 0.82rem;
+  color: #94a3b8;
+}
+
+.stat strong {
+  display: block;
+  margin-top: 0.4rem;
+  font-size: 1.1rem;
+}
+
+.actions,
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.9rem;
+}
+
+.card-tile {
+  border-radius: 18px;
+  padding: 1rem;
+  background: rgba(31, 41, 55, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.card-tile.selected {
+  outline: 2px solid #f97316;
+}
+
+.card-tile header,
+.history-day header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.card-effect,
+.muted {
+  color: #94a3b8;
+}
+
+.history {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.history-day {
+  border-radius: 16px;
+  padding: 0.9rem 1rem;
+  background: rgba(15, 23, 42, 0.72);
+}
+
+.ending {
+  border-color: rgba(249, 115, 22, 0.45);
+}
+
+.message {
+  color: #f59e0b;
+}
+
+.error {
+  color: #fca5a5;
+}
+
+@media (max-width: 900px) {
+  .summary-grid,
+  .two-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .hero {
+    flex-direction: column;
+    align-items: start;
+  }
+}
+

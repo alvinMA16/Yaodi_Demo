@@ -1,0 +1,155 @@
+:root {
+  color: #f9fafb;
+  background:
+    radial-gradient(circle at top left, rgba(14, 165, 233, 0.18), transparent 25%),
+    linear-gradient(180deg, #0b1120 0%, #111827 100%);
+  font-family: "IBM Plex Sans", "Helvetica Neue", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button {
+  border: 0;
+  border-radius: 16px;
+  padding: 0.75rem 1rem;
+  background: #1f2937;
+  color: #f9fafb;
+  cursor: pointer;
+}
+
+button.primary {
+  background: #0ea5e9;
+  color: #082f49;
+}
+
+input,
+textarea {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 0.85rem 1rem;
+  background: rgba(15, 23, 42, 0.75);
+  color: inherit;
+}
+
+label {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.admin-shell {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.admin-hero,
+.panel {
+  background: rgba(15, 23, 42, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 24px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.28);
+}
+
+.admin-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: end;
+  padding: 1.5rem;
+}
+
+.eyebrow {
+  margin: 0;
+  color: #38bdf8;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+}
+
+.admin-grid {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.panel {
+  padding: 1.25rem;
+}
+
+.editor-panel,
+.history {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.version-list,
+.run-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.version-item,
+.run-item {
+  display: grid;
+  gap: 0.35rem;
+  text-align: left;
+}
+
+.version-item.selected,
+.run-item.selected {
+  outline: 2px solid #38bdf8;
+}
+
+.actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.history-item {
+  border-radius: 16px;
+  padding: 0.85rem 1rem;
+  background: rgba(2, 6, 23, 0.55);
+}
+
+.history-item header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.muted {
+  color: #94a3b8;
+}
+
+.message {
+  color: #38bdf8;
+}
+
+.error {
+  color: #fca5a5;
+}
+
+@media (max-width: 960px) {
+  .admin-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-hero {
+    flex-direction: column;
+    align-items: start;
+  }
+}

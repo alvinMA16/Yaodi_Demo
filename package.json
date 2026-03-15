@@ -1,0 +1,19 @@
+{
+  "name": "alibi-inquest",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace @alibi/game-core && npm run build --workspace @alibi/api && npm run build --workspace @alibi/player-web && npm run build --workspace @alibi/admin-web",
+    "dev": "npm run build --workspace @alibi/game-core && concurrently -k -n api,player,admin \"npm run dev --workspace @alibi/api\" \"npm run dev --workspace @alibi/player-web\" \"npm run dev --workspace @alibi/admin-web\"",
+    "typecheck": "npm run build --workspace @alibi/game-core && npm run typecheck --workspace @alibi/api && npm run typecheck --workspace @alibi/player-web && npm run typecheck --workspace @alibi/admin-web",
+    "test": "npm run test --workspace @alibi/game-core"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "typescript": "^5.8.2"
+  }
+}
