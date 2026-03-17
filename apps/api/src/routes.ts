@@ -13,20 +13,30 @@ import {
   createRun,
   getActiveBalanceVersion,
   getBalanceVersion,
+  getProfile,
   getRun,
   listActionLogs,
   listBalanceVersions,
   listRuns,
   publishBalanceVersion,
   updateBalanceVersion,
+  updateProfile,
   updateRun
 } from "./db.js";
 import { createDraftVersionName, draftFromConfig } from "./defaults.js";
+import {
+  profileResponse,
+  removeLoadoutFromProfile,
+  resolveLoadout,
+  settleProfileAfterRun,
+  updateEquippedLoadout
+} from "./profile.js";
 import { parseBalanceConfig, parseState, parseSummary } from "./serialization.js";
 
 const createRunSchema = z.object({
   balanceVersionId: z.number().int().optional(),
-  seed: z.number().int().optional()
+  seed: z.number().int().optional(),
+  carryCardIds: z.array(z.string()).max(3).optional()
 });
 
 const actionSchema = z.discriminatedUnion("type", [
@@ -36,7 +46,8 @@ const actionSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     type: z.literal("playCard"),
-    cardInstanceId: z.string().min(1)
+    cardInstanceId: z.string().min(1),
+    targetFactions: z.array(z.enum(["gov", "corp", "anti"])).max(2).optional()
   }),
   z.object({
     type: z.literal("endDay"),
@@ -49,6 +60,10 @@ const balanceDraftSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   sourceVersionId: z.number().int().optional()
+});
+
+const loadoutSchema = z.object({
+  equippedCardIds: z.array(z.string()).max(3)
 });
 
 const updateBalanceSchema = z.object({
@@ -70,6 +85,19 @@ const updateBalanceSchema = z.object({
           corp: z.number(),
           anti: z.number()
         }),
+        effectMode: z.enum(["boost_lowest_2", "shift_high_to_low_1", "shift_high_to_low_2", "shift_high_to_low_3"]).optional(),
+        orangeEffect: z
+          .enum([
+            "double_day_delta_today",
+            "market_swing_today",
+            "double_future_info_cards_no_retain",
+            "force_highest_inquiry_today",
+            "force_negative_target_today",
+            "lockstep_pair_today",
+            "swap_highest_lowest_today"
+          ])
+          .optional(),
+        effectLabel: z.string().optional(),
         weight: z.number(),
         reusable: z.boolean().optional(),
         starter: z.boolean().optional()
@@ -90,8 +118,10 @@ function toRunResponse(run: {
   status: string;
   seed: number;
   balanceVersionId: number;
+  loadoutCardIdsJson: string;
   stateJson: string;
   summaryJson: string;
+  settlementJson?: string | null;
   endingCode?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -101,8 +131,10 @@ function toRunResponse(run: {
     status: run.status,
     seed: run.seed,
     balanceVersionId: run.balanceVersionId,
+    loadoutCardIds: JSON.parse(run.loadoutCardIdsJson) as string[],
     state: parseState(run.stateJson),
     summary: parseSummary(run.summaryJson),
+    settlement: run.settlementJson ? JSON.parse(run.settlementJson) : null,
     endingCode: run.endingCode,
     createdAt: run.createdAt,
     updatedAt: run.updatedAt
@@ -114,10 +146,28 @@ export async function registerRoutes(app: FastifyInstance) {
 
   app.get("/bootstrap", async () => {
     const activeBalanceVersion = await getActiveBalanceVersion();
+    const profile = await getProfile();
 
     return {
       activeBalanceVersion,
+      profile: activeBalanceVersion ? profileResponse(profile, parseBalanceConfig(activeBalanceVersion.configJson)) : undefined,
       fallbackBalance: activeBalanceVersion ? undefined : defaultBalanceConfig
+    };
+  });
+
+  app.put("/profile/loadout", async (request, reply) => {
+    const payload = loadoutSchema.parse(request.body ?? {});
+    const activeVersion = await getActiveBalanceVersion();
+
+    if (!activeVersion) {
+      return reply.code(400).send({ message: "No active balance version available" });
+    }
+
+    const config = parseBalanceConfig(activeVersion.configJson);
+    const updatedProfile = await updateProfile((current) => updateEquippedLoadout(current, payload.equippedCardIds, config, new Date().toISOString()));
+
+    return {
+      profile: profileResponse(updatedProfile, config)
     };
   });
 
@@ -131,19 +181,27 @@ export async function registerRoutes(app: FastifyInstance) {
 
     const config = parseBalanceConfig(activeVersion.configJson);
     const seed = payload.seed ?? Math.floor(Math.random() * 1_000_000);
-    const state = startRun(config, { seed, balanceVersionId: activeVersion.id });
+    const profile = await getProfile();
+    const carryCardIds = resolveLoadout(payload.carryCardIds, profile, config);
+    const state = startRun(config, { seed, balanceVersionId: activeVersion.id, carryCardIds });
     const summary = summarizeRun(state);
     const run = await createRun({
       id: `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       status: state.runStatus,
       seed,
       balanceVersionId: activeVersion.id,
+      loadoutCardIdsJson: JSON.stringify(carryCardIds),
       stateJson: JSON.stringify(state),
       summaryJson: JSON.stringify(summary),
+      settlementJson: null,
       endingCode: null
     });
+    const updatedProfile = await updateProfile((current) => removeLoadoutFromProfile(current, carryCardIds, new Date().toISOString()));
 
-    return reply.code(201).send(toRunResponse(run));
+    return reply.code(201).send({
+      ...toRunResponse(run),
+      profile: profileResponse(updatedProfile, config)
+    });
   });
 
   app.get("/runs/:id", async (request, reply) => {
@@ -177,11 +235,24 @@ export async function registerRoutes(app: FastifyInstance) {
     const actionDay = state.day;
     const result = applyAction(config, run.seed, state, action);
     const summary = summarizeRun(result.state);
+    let settlement = null;
+    let profile = null;
+
+    if (result.state.runStatus !== "active") {
+      const currentProfile = await getProfile();
+      const loadoutCardIds = JSON.parse(run.loadoutCardIdsJson) as string[];
+      const settled = settleProfileAfterRun(currentProfile, config, result.state, loadoutCardIds, run.seed, new Date().toISOString());
+      settlement = settled.settlement;
+      const updatedProfile = await updateProfile(() => settled.profile);
+      profile = profileResponse(updatedProfile, config);
+    }
+
     const updated = await updateRun(id, (current) => ({
       ...current,
       status: result.state.runStatus,
       stateJson: JSON.stringify(result.state),
       summaryJson: JSON.stringify(summary),
+      settlementJson: settlement ? JSON.stringify(settlement) : current.settlementJson ?? null,
       endingCode: result.state.ending?.code ?? null
     }));
 
@@ -198,7 +269,8 @@ export async function registerRoutes(app: FastifyInstance) {
 
     return {
       ...toRunResponse(updated),
-      actionSummary: result.actionSummary
+      actionSummary: result.actionSummary,
+      ...(profile ? { profile } : {})
     };
   });
 

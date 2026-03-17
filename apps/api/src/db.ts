@@ -2,6 +2,7 @@ import { defaultBalanceConfig } from "@alibi/game-core";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { environment } from "./config.js";
+import { createSeedProfile, type PlayerProfileRecord } from "./profile.js";
 
 export interface BalanceVersionRecord {
   id: number;
@@ -20,8 +21,10 @@ export interface RunRecord {
   status: string;
   seed: number;
   balanceVersionId: number;
+  loadoutCardIdsJson: string;
   stateJson: string;
   summaryJson: string;
+  settlementJson?: string | null;
   endingCode?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -41,6 +44,7 @@ interface StoreFile {
   balanceVersions: BalanceVersionRecord[];
   runs: RunRecord[];
   actionLogs: ActionLogRecord[];
+  profile: PlayerProfileRecord;
 }
 
 const dataFile = resolve(process.cwd(), environment.DATA_FILE);
@@ -68,7 +72,8 @@ function createSeedStore(): StoreFile {
       }
     ],
     runs: [],
-    actionLogs: []
+    actionLogs: [],
+    profile: createSeedProfile(defaultBalanceConfig, createdAt)
   };
 }
 
@@ -90,6 +95,18 @@ async function readStore() {
 
 export async function ensureStore() {
   await readStore();
+}
+
+export async function getProfile() {
+  const store = await readStore();
+  return store.profile;
+}
+
+export async function updateProfile(updater: (current: PlayerProfileRecord) => PlayerProfileRecord) {
+  const store = await readStore();
+  store.profile = updater(store.profile);
+  await writeStore(store);
+  return store.profile;
 }
 
 export async function listBalanceVersions() {

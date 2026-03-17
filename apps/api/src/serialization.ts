@@ -11,4 +11,3 @@ export function parseState(stateJson: string) {
 export function parseSummary(summaryJson: string) {
   return JSON.parse(summaryJson) as RunSummary;
 }
-

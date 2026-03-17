@@ -101,6 +101,13 @@ label {
   gap: 0.75rem;
 }
 
+.run-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-bottom: 1rem;
+}
+
 .version-item,
 .run-item {
   display: grid;
@@ -135,6 +142,82 @@ label {
   color: #94a3b8;
 }
 
+.admin-replay {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  border-radius: 20px;
+  background: rgba(2, 6, 23, 0.35);
+  border: 1px solid rgba(56, 189, 248, 0.12);
+}
+
+.admin-ending-summary {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  border-radius: 20px;
+  background: rgba(8, 47, 73, 0.22);
+  border: 1px solid rgba(125, 211, 252, 0.14);
+}
+
+.admin-replay-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: start;
+}
+
+.admin-replay-header h3 {
+  margin: 0;
+}
+
+.replay-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.4rem 0.75rem;
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.12);
+  color: #7dd3fc;
+  white-space: nowrap;
+}
+
+.replay-day-switcher {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.replay-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.8rem;
+}
+
+.replay-stat {
+  padding: 0.9rem 1rem;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.replay-stat span {
+  display: block;
+  font-size: 0.82rem;
+  color: #94a3b8;
+}
+
+.replay-stat strong {
+  display: block;
+  margin-top: 0.45rem;
+  line-height: 1.45;
+}
+
+.replay-step {
+  border-left: 3px solid #38bdf8;
+}
+
 .message {
   color: #38bdf8;
 }
@@ -151,5 +234,10 @@ label {
   .admin-hero {
     flex-direction: column;
     align-items: start;
+  }
+
+  .admin-replay-header,
+  .history-item header {
+    flex-direction: column;
   }
 }

@@ -26,6 +26,8 @@ type RunSummary = {
   };
 };
 
+type RunFilter = "all" | "death" | "perfect";
+
 type RunDetail = RunSummary & {
   state: {
     world: {
@@ -34,13 +36,35 @@ type RunDetail = RunSummary & {
       anti: number;
     };
     pressure: number;
+    ending?: {
+      code: string;
+      title: string;
+      summary: string;
+      rankingLabel: string;
+      playerTendencyLabel: string;
+      worldEndingTitle: string;
+      worldEndingSummary: string;
+    };
     history: Array<{
       day: number;
       reportSubmitted: boolean;
+      pressureBefore: number;
       pressureAfter: number;
+      worldBefore: { gov: number; corp: number; anti: number };
+      worldAfter: { gov: number; corp: number; anti: number };
       retainedCardIds: string[];
       discardedCardIds: string[];
       playedCards: Array<{ cardId: string }>;
+      endDayResolutionLogs: Array<{
+        step: string;
+        summary: string;
+        worldBefore: { gov: number; corp: number; anti: number };
+        worldAfter: { gov: number; corp: number; anti: number };
+        pressureBefore: number;
+        pressureAfter: number;
+      }>;
+      worldEventTitle?: string;
+      worldEventSummary?: string;
     }>;
   };
   actionLogs: Array<{
@@ -69,6 +93,10 @@ async function request<T>(path: string, init?: RequestInit) {
   return (await response.json()) as T;
 }
 
+function worldLabel(world: { gov: number; corp: number; anti: number }) {
+  return `Gov ${world.gov} / Corp ${world.corp} / Anti ${world.anti}`;
+}
+
 function formatConfig(config: BalanceConfig) {
   return JSON.stringify(config, null, 2);
 }
@@ -82,6 +110,8 @@ export default function App() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [runDetail, setRunDetail] = useState<RunDetail | null>(null);
+  const [selectedReplayDay, setSelectedReplayDay] = useState<number | null>(null);
+  const [runFilter, setRunFilter] = useState<RunFilter>("all");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -142,6 +172,49 @@ export default function App() {
     })();
   }, [selectedRunId]);
 
+  useEffect(() => {
+    if (!runDetail || runDetail.state.history.length === 0) {
+      setSelectedReplayDay(null);
+      return;
+    }
+
+    const lastHistoryDay = runDetail.state.history[runDetail.state.history.length - 1];
+
+    setSelectedReplayDay((current) => {
+      if (current !== null && runDetail.state.history.some((day) => day.day === current)) {
+        return current;
+      }
+
+      return lastHistoryDay ? lastHistoryDay.day : null;
+    });
+  }, [runDetail]);
+
+  useEffect(() => {
+    if (!selectedRunId) {
+      return;
+    }
+
+    const selectedRunVisible = runs.some((run) => {
+      if (run.id !== selectedRunId) {
+        return false;
+      }
+
+      if (runFilter === "death") {
+        return run.endingCode === "death";
+      }
+
+      if (runFilter === "perfect") {
+        return run.endingCode === "perfect";
+      }
+
+      return true;
+    });
+
+    if (!selectedRunVisible) {
+      setSelectedRunId(null);
+    }
+  }, [runFilter, runs, selectedRunId]);
+
   const createDraft = async () => {
     try {
       setError(null);
@@ -200,6 +273,25 @@ export default function App() {
       setError(caught instanceof Error ? caught.message : "发布失败");
     }
   };
+
+  const replayDays = runDetail ? [...runDetail.state.history].reverse() : [];
+  const replayDay =
+    runDetail && selectedReplayDay !== null
+      ? runDetail.state.history.find((day) => day.day === selectedReplayDay) ?? null
+      : null;
+  const lastHistoryDay = runDetail?.state.history[runDetail.state.history.length - 1] ?? null;
+  const lastActionSummary = runDetail?.actionLogs[runDetail.actionLogs.length - 1]?.payload.actionSummary ?? null;
+  const filteredRuns = runs.filter((run) => {
+    if (runFilter === "death") {
+      return run.endingCode === "death";
+    }
+
+    if (runFilter === "perfect") {
+      return run.endingCode === "perfect";
+    }
+
+    return true;
+  });
 
   return (
     <main className="admin-shell">
@@ -268,8 +360,19 @@ export default function App() {
       <section className="admin-grid">
         <section className="panel">
           <h2>Recent Runs</h2>
+          <div className="run-filters">
+            <button className={runFilter === "all" ? "primary" : undefined} onClick={() => setRunFilter("all")}>
+              全部 {runs.length}
+            </button>
+            <button className={runFilter === "death" ? "primary" : undefined} onClick={() => setRunFilter("death")}>
+              死亡局 {runs.filter((run) => run.endingCode === "death").length}
+            </button>
+            <button className={runFilter === "perfect" ? "primary" : undefined} onClick={() => setRunFilter("perfect")}>
+              强胜利局 {runs.filter((run) => run.endingCode === "perfect").length}
+            </button>
+          </div>
           <div className="run-list">
-            {runs.map((run) => (
+            {filteredRuns.map((run) => (
               <button
                 key={run.id}
                 className={`run-item ${run.id === selectedRunId ? "selected" : ""}`}
@@ -282,6 +385,7 @@ export default function App() {
               </button>
             ))}
             {runs.length === 0 ? <p className="muted">还没有战局数据。</p> : null}
+            {runs.length > 0 && filteredRuns.length === 0 ? <p className="muted">当前筛选下没有 run。</p> : null}
           </div>
         </section>
 
@@ -295,6 +399,164 @@ export default function App() {
               <p>
                 World: Gov {runDetail.state.world.gov} / Corp {runDetail.state.world.corp} / Anti {runDetail.state.world.anti}
               </p>
+              {runDetail.state.ending ? (
+                <section className="admin-ending-summary">
+                  <div className="admin-replay-header">
+                    <div>
+                      <h3>结局对照摘要</h3>
+                      <p className="muted">把最终世界走向、你的调查结果和关键终止信息压成一眼能看懂的摘要。</p>
+                    </div>
+                    <span className="replay-chip">{runDetail.state.ending.code}</span>
+                  </div>
+
+                  <div className="replay-summary-grid">
+                    <article className="replay-stat">
+                      <span>世界结局</span>
+                      <strong>《{runDetail.state.ending.worldEndingTitle}》</strong>
+                    </article>
+                    <article className="replay-stat">
+                      <span>调查结果</span>
+                      <strong>{runDetail.state.ending.title}</strong>
+                    </article>
+                    <article className="replay-stat">
+                      <span>阵营排序</span>
+                      <strong>{runDetail.state.ending.rankingLabel}</strong>
+                    </article>
+                    <article className="replay-stat">
+                      <span>玩家倾向</span>
+                      <strong>{runDetail.state.ending.playerTendencyLabel}</strong>
+                    </article>
+                    <article className="replay-stat">
+                      <span>报告天数</span>
+                      <strong>{runDetail.summary.reportDays} / 7</strong>
+                    </article>
+                    <article className="replay-stat">
+                      <span>{runDetail.status === "dead" ? "触发日" : "收束日"}</span>
+                      <strong>{lastHistoryDay ? `Day ${lastHistoryDay.day}` : "未记录"}</strong>
+                    </article>
+                  </div>
+
+                  <p>{runDetail.state.ending.worldEndingSummary}</p>
+                  <p>{runDetail.state.ending.summary}</p>
+                  {runDetail.status === "dead" ? (
+                    <p className="muted">终止动作：{lastActionSummary ?? "未记录，通常为压力或特殊死亡条件触发。"}</p>
+                  ) : null}
+                </section>
+              ) : (
+                <section className="admin-ending-summary">
+                  <div className="admin-replay-header">
+                    <div>
+                      <h3>战局摘要</h3>
+                      <p className="muted">当前 run 还没结算，先看运行状态、报告进度和最近动作。</p>
+                    </div>
+                    <span className="replay-chip">{runDetail.status}</span>
+                  </div>
+
+                  <div className="replay-summary-grid">
+                    <article className="replay-stat">
+                      <span>当前 Day</span>
+                      <strong>{runDetail.summary.day}</strong>
+                    </article>
+                    <article className="replay-stat">
+                      <span>当前压力</span>
+                      <strong>{runDetail.summary.pressure}</strong>
+                    </article>
+                    <article className="replay-stat">
+                      <span>报告天数</span>
+                      <strong>{runDetail.summary.reportDays} / 7</strong>
+                    </article>
+                    <article className="replay-stat">
+                      <span>当前排序</span>
+                      <strong>{runDetail.summary.ranking.join(" > ")}</strong>
+                    </article>
+                  </div>
+
+                  <p className="muted">最近动作：{lastActionSummary ?? "还没有动作记录。"}</p>
+                </section>
+              )}
+              {replayDay ? (
+                <section className="admin-replay">
+                  <div className="admin-replay-header">
+                    <div>
+                      <h3>Day {replayDay.day} 回放</h3>
+                      <p className="muted">按天切换查看每一天如何把局势推到当前 run 的结果。</p>
+                    </div>
+                    <span className="replay-chip">{replayDay.endDayResolutionLogs.length} 步结算</span>
+                  </div>
+
+                  <div className="replay-day-switcher">
+                    {replayDays.map((day) => (
+                      <button
+                        key={day.day}
+                        className={day.day === replayDay.day ? "primary" : undefined}
+                        onClick={() => setSelectedReplayDay(day.day)}
+                      >
+                        Day {day.day}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="replay-summary-grid">
+                    <article className="replay-stat">
+                      <span>当天打出</span>
+                      <strong>{replayDay.playedCards.length}</strong>
+                    </article>
+                    <article className="replay-stat">
+                      <span>世界变化</span>
+                      <strong>
+                        {worldLabel(replayDay.worldBefore)} to {worldLabel(replayDay.worldAfter)}
+                      </strong>
+                    </article>
+                    <article className="replay-stat">
+                      <span>压力变化</span>
+                      <strong>
+                        {replayDay.pressureBefore} to {replayDay.pressureAfter}
+                      </strong>
+                    </article>
+                  </div>
+
+                  <p>Played: {replayDay.playedCards.map((card) => card.cardId).join(", ") || "无"}</p>
+                  <p>Discarded: {replayDay.discardedCardIds.join(", ") || "无"}</p>
+                  <p>Retained: {replayDay.retainedCardIds.join(", ") || "无"}</p>
+                  {replayDay.worldEventTitle ? <p>World Event: {replayDay.worldEventTitle}</p> : null}
+                  {replayDay.worldEventSummary ? <p>Event Summary: {replayDay.worldEventSummary}</p> : null}
+
+                  <div className="history">
+                    {replayDay.endDayResolutionLogs.length > 0 ? (
+                      replayDay.endDayResolutionLogs.map((entry, index) => (
+                        <article key={`${replayDay.day}-${entry.step}-${index}`} className="history-item replay-step">
+                          <header>
+                            <strong>
+                              {index + 1}. {entry.step}
+                            </strong>
+                            <span>
+                              Pressure {entry.pressureBefore} to {entry.pressureAfter}
+                            </span>
+                          </header>
+                          <p>{entry.summary}</p>
+                          <p className="muted">
+                            World {worldLabel(entry.worldBefore)} to {worldLabel(entry.worldAfter)}
+                          </p>
+                        </article>
+                      ))
+                    ) : (
+                      <article className="history-item replay-step">
+                        <header>
+                          <strong>1. 平静收束</strong>
+                          <span>
+                            Pressure {replayDay.pressureBefore} to {replayDay.pressureAfter}
+                          </span>
+                        </header>
+                        <p>这一天没有额外连锁结算，局势主要由当天出牌、保留和基础日终规则决定。</p>
+                        <p className="muted">
+                          World {worldLabel(replayDay.worldBefore)} to {worldLabel(replayDay.worldAfter)}
+                        </p>
+                      </article>
+                    )}
+                  </div>
+                </section>
+              ) : null}
+              <h3>Daily History</h3>
               <div className="history">
                 {runDetail.state.history.map((day) => (
                   <article key={day.day} className="history-item">
@@ -306,6 +568,18 @@ export default function App() {
                     <p>Played: {day.playedCards.map((card) => card.cardId).join(", ") || "无"}</p>
                     <p>Discarded: {day.discardedCardIds.join(", ") || "无"}</p>
                     <p>Retained: {day.retainedCardIds.join(", ") || "无"}</p>
+                    {day.worldEventTitle ? <p>World Event: {day.worldEventTitle}</p> : null}
+                    {day.worldEventSummary ? <p>Event Summary: {day.worldEventSummary}</p> : null}
+                    {day.endDayResolutionLogs.length > 0 ? (
+                      <div className="history">
+                        {day.endDayResolutionLogs.map((entry, index) => (
+                          <p key={`${day.day}-${entry.step}-${index}`}>
+                            {index + 1}. {entry.step}: {entry.summary} | World {entry.worldBefore.gov}/{entry.worldBefore.corp}/{entry.worldBefore.anti} to{" "}
+                            {entry.worldAfter.gov}/{entry.worldAfter.corp}/{entry.worldAfter.anti} | Pressure {entry.pressureBefore} to {entry.pressureAfter}
+                          </p>
+                        ))}
+                      </div>
+                    ) : null}
                   </article>
                 ))}
               </div>
@@ -330,4 +604,3 @@ export default function App() {
     </main>
   );
 }
-
